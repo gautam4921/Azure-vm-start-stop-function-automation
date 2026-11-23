@@ -14,6 +14,12 @@ output "function_app_name" {
   value = azurerm_function_app_flex_consumption.vm_automation.name
 }
 
+output "function_app_resource_group" {
+  description = "Resource group containing the Function App"
+  value       = azurerm_resource_group.automation.name
+}
+
+
 output "function_app_hostname" {
   value = azurerm_function_app_flex_consumption.vm_automation.default_hostname
 }

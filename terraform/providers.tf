@@ -11,6 +11,13 @@ terraform {
       version = "~> 3.6"
     }
   }
+
+  backend "azurerm" {
+    resource_group_name  = "rg-tfstate-southindia"
+    storage_account_name = "sttfstateyourunique01"
+    container_name       = "tfstate"
+    key                  = "vm-automation.tfstate"
+  }
 }
 
 provider "azurerm" {
