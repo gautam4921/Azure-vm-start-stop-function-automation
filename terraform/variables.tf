@@ -94,3 +94,12 @@ variable "instance_memory_in_mb" {
   type    = number
   default = 2048
 }
+variable "ado_service_principal_object_id" {
+  description = "Object ID of the Azure DevOps service principal"
+  type        = string
+}
+
+variable "function_app_resource_id" {
+  description = "Resource ID of the Azure Function App"
+  type        = string
+}

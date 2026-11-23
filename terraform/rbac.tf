@@ -27,3 +27,14 @@ resource "azurerm_role_assignment" "function_storage_table" {
   principal_id         = azurerm_function_app_flex_consumption.vm_automation.identity[0].principal_id
   principal_type       = "ServicePrincipal"
 }
+# Grant Azure DevOps Service Principal permission to deploy
+# applications to the Azure Function App.
+
+resource "azurerm_role_assignment" "ado_function_app_website_contributor" {
+  scope                = var.function_app_resource_id
+  role_definition_name = "Website Contributor"
+  principal_id         = var.ado_service_principal_object_id
+  principal_type       = "ServicePrincipal"
+
+  skip_service_principal_aad_check = true
+}
