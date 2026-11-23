@@ -15,7 +15,9 @@ variables:
 
   # Azure resources
   functionResourceGroup: 'rg-vm-automation'
-  functionAppName: 'func-vm-auto-i3mo0bv'
+  functionAppName: '#######'
+  # Change the Azure Function App name after terraform deployment
+  
 
   # Azure Artifacts feed
   artifactFeed: 'Azure-vm-start-stop-automation/python-packages'
