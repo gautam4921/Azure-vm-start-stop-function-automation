@@ -91,6 +91,44 @@ Edit `terraform.tfvars` with:
 
 The sample uses two Ubuntu 22.04 VMs, `Standard_B2s`, with public IPs and SSH restricted by NSG to `admin_source_cidr`. Confirm the VM size is offered in South India and your subscription has quota. For production, consider private access through Bastion/VPN instead of public IPs.
 
+## 3a Update terraform/rbac.tf
+# Grant Azure DevOps Service Principal permission to deploy
+# applications to the Azure Function App.
+
+resource "azurerm_role_assignment" "ado_function_app_website_contributor" {
+  scope                = var.function_app_resource_id
+  role_definition_name = "Website Contributor"
+  principal_id         = var.ado_service_principal_object_id
+  principal_type       = "ServicePrincipal"
+
+  skip_service_principal_aad_check = true
+}
+# Update terraform/variables.tf 
+Add these variables:
+variable "ado_service_principal_object_id" {
+  description = "Object ID of the Azure DevOps service principal"
+  type        = string
+}
+
+variable "function_app_resource_id" {
+  description = "Resource ID of the Azure Function App"
+  type        = string
+}
+
+# Update your terraform.tfvars
+ado_service_principal_object_id = "9492ff78-a34c-4c70-b2ca-03843427ec6d"
+
+function_app_resource_id = "/subscriptions/cd6208f9-14cc-4d2d-a201-43ec9eeda060/resourceGroups/rg-vm-automation/providers/Microsoft.Web/sites/func-vm-auto-i3mo0bv"
+
+# The object ID above is the service principal's Object ID, not its Application (Client) ID.
+
+You can also retrieve the Function App resource ID using: Change the function app name as given your terraform build.
+az functionapp show `
+  --name "func-vm-auto-i3mo0bv" `
+  --resource-group "rg-vm-automation" `
+  --query id `
+  --output tsv
+
 ## 4. Initialize, plan and apply
 
 ```powershell

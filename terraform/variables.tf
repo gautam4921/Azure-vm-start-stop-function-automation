@@ -99,7 +99,3 @@ variable "ado_service_principal_object_id" {
   type        = string
 }
 
-variable "function_app_resource_id" {
-  description = "Resource ID of the Azure Function App"
-  type        = string
-}
