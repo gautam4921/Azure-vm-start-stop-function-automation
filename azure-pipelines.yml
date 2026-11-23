@@ -1,69 +1,208 @@
+
 trigger:
   branches:
     include:
       - main
 
 pool:
-  vmImage: ubuntu-latest
+  vmImage: 'ubuntu-latest'
 
 variables:
   pythonVersion: '3.11'
+
+  # Azure DevOps service connection
   azureServiceConnection: 'sc-azure-vm-automation'
+
+  # Azure Function App details
   functionResourceGroup: 'rg-vm-automation'
   functionAppName: 'func-vm-auto-i3mo0bv'
 
+  # Project directories
+  functionProjectPath: '$(Build.SourcesDirectory)/function-app'
+  testProjectPath: '$(Build.SourcesDirectory)/tests'
+
+  # Artifact details
+  artifactName: 'function-package'
+  zipFileName: 'functionapp.zip'
+
+
 stages:
+
+# ==========================================================
+# STAGE 1: BUILD AND TEST
+# ==========================================================
+
 - stage: Build_Test
-  displayName: Build and test Python Function
+  displayName: 'Build and Test Azure Function'
+
   jobs:
   - job: Build
+    displayName: 'Install dependencies, test and package'
+
     steps:
+
+    # Step 1: Checkout source code
+    - checkout: self
+      clean: true
+
+    # Step 2: Select Python version
     - task: UsePythonVersion@0
+      displayName: 'Select Python 3.11'
       inputs:
         versionSpec: '$(pythonVersion)'
+        addToPath: true
 
+    # Step 3: Verify repository structure
     - script: |
-        python -m pip install --upgrade pip
-        pip install -r function-app/requirements.txt
-        pip install pytest
-        PYTHONPATH=function-app pytest -q tests
-      displayName: Install dependencies and run unit tests
+        set -euo pipefail
 
+        echo "Checking repository structure..."
+
+        echo "Function App files:"
+        ls -la "$(functionProjectPath)"
+
+        echo "Test files:"
+        ls -la "$(testProjectPath)"
+
+        test -f "$(functionProjectPath)/host.json"
+        test -f "$(functionProjectPath)/function_app.py"
+        test -f "$(functionProjectPath)/requirements.txt"
+
+      displayName: 'Verify Function App source files'
+
+    # Step 4: Install dependencies and run unit tests
+    - script: |
+        set -euo pipefail
+
+        echo "Python version:"
+        python --version
+
+        echo "Pip version:"
+        python -m pip --version
+
+        echo "Installing Function App dependencies..."
+
+        python -m pip install \
+          --disable-pip-version-check \
+          --retries 10 \
+          --timeout 120 \
+          --no-cache-dir \
+          -r "$(functionProjectPath)/requirements.txt" \
+          pytest
+
+        echo "Running unit tests..."
+
+        PYTHONPATH="$(functionProjectPath)" \
+          python -m pytest -v "$(testProjectPath)/"
+
+      displayName: 'Install dependencies and run unit tests'
+
+    # Step 5: Create ZIP deployment package
     - task: ArchiveFiles@2
-      displayName: Package Function App source
+      displayName: 'Create Function App ZIP package'
       inputs:
-        rootFolderOrFile: '$(Build.SourcesDirectory)/function-app'
+        rootFolderOrFile: '$(functionProjectPath)'
         includeRootFolder: false
-        archiveType: zip
-        archiveFile: '$(Build.ArtifactStagingDirectory)/functionapp.zip'
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/$(zipFileName)'
         replaceExistingArchive: true
 
-    - publish: '$(Build.ArtifactStagingDirectory)/functionapp.zip'
-      artifact: function-package
+    # Step 6: Verify ZIP package
+    - script: |
+        set -euo pipefail
+
+        echo "Deployment package created:"
+        ls -lh "$(Build.ArtifactStagingDirectory)/$(zipFileName)"
+
+        echo "Checking ZIP contents:"
+        unzip -l "$(Build.ArtifactStagingDirectory)/$(zipFileName)"
+
+      displayName: 'Verify deployment package'
+
+    # Step 7: Publish pipeline artifact
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Function App artifact'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)/$(zipFileName)'
+        artifact: '$(artifactName)'
+        publishLocation: 'pipeline'
+
+
+# ==========================================================
+# STAGE 2: DEPLOY TO DEVELOPMENT
+# ==========================================================
 
 - stage: Deploy_Dev
-  displayName: Deploy to Development Flex Consumption
+  displayName: 'Deploy Azure Function to DEV'
+
   dependsOn: Build_Test
   condition: succeeded()
+
   jobs:
+
   - deployment: DeployFunction
-    environment: vm-automation-dev
+    displayName: 'Deploy Python Function App'
+
+    environment: 'vm-automation-dev'
+
     strategy:
       runOnce:
         deploy:
           steps:
-          - download: current
-            artifact: function-package
 
+          # Step 1: Download build artifact
+          - download: current
+            artifact: '$(artifactName)'
+
+          # Step 2: Verify downloaded package
+          - script: |
+              set -euo pipefail
+
+              echo "Checking downloaded deployment package..."
+
+              ls -lh "$(Pipeline.Workspace)/$(artifactName)/$(zipFileName)"
+
+            displayName: 'Verify downloaded artifact'
+
+          # Step 3: Deploy to Azure Function App
           - task: AzureCLI@2
-            displayName: Deploy Flex Consumption package with remote Python build
+            displayName: 'Deploy Function App to Azure'
             inputs:
               azureSubscription: '$(azureServiceConnection)'
-              scriptType: pscore
-              scriptLocation: inlineScript
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
               inlineScript: |
-                az functionapp deployment source config-zip `
-                  --resource-group "$(functionResourceGroup)" `
-                  --name "$(functionAppName)" `
-                  --src "$(Pipeline.Workspace)/function-package/functionapp.zip" `
+                set -euo pipefail
+
+                echo "Azure account information:"
+                az account show --output table
+
+                echo "Deploying Azure Function App..."
+
+                az functionapp deployment source config-zip \
+                  --resource-group "$(functionResourceGroup)" \
+                  --name "$(functionAppName)" \
+                  --src "$(Pipeline.Workspace)/$(artifactName)/$(zipFileName)" \
                   --build-remote true
+
+                echo "Deployment command completed."
+
+          # Step 4: Verify Function App status
+          - task: AzureCLI@2
+            displayName: 'Verify Azure Function App'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                set -euo pipefail
+
+                echo "Checking Function App configuration..."
+
+                az functionapp show \
+                  --resource-group "$(functionResourceGroup)" \
+                  --name "$(functionAppName)" \
+                  --query "{name:name,state:state,hostName:defaultHostName}" \
+                  --output table
+
+                echo "Azure Function App verification completed."
