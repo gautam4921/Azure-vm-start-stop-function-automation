@@ -1,3 +1,4 @@
+
 trigger:
   branches:
     include:
@@ -12,15 +13,18 @@ variables:
   # Azure DevOps service connection
   azureServiceConnection: 'sc-azure-vm-automation'
 
-  # Azure Function App details
+  # Azure resources
   functionResourceGroup: 'rg-vm-automation'
   functionAppName: 'func-vm-auto-i3mo0bv'
 
-  # Project directories
+  # Azure Artifacts feed
+  artifactFeed: 'Azure-vm-start-stop-automation/python-packages'
+
+  # Project paths
   functionProjectPath: '$(Build.SourcesDirectory)/function-app'
   testProjectPath: '$(Build.SourcesDirectory)/tests'
 
-  # Artifact details
+  # Build artifact
   artifactName: 'function-package'
   zipFileName: 'functionapp.zip'
 
@@ -40,18 +44,18 @@ stages:
 
     steps:
 
-    # Step 1: Checkout source code
+    # 1. Checkout GitHub repository
     - checkout: self
       clean: true
 
-    # Step 2: Select Python version
+    # 2. Select Python 3.11
     - task: UsePythonVersion@0
       displayName: 'Select Python 3.11'
       inputs:
         versionSpec: '$(pythonVersion)'
         addToPath: true
 
-    # Step 3: Verify repository structure
+    # 3. Verify source code structure
     - script: |
         set -euo pipefail
 
@@ -66,10 +70,18 @@ stages:
         test -f "$(functionProjectPath)/host.json"
         test -f "$(functionProjectPath)/function_app.py"
         test -f "$(functionProjectPath)/requirements.txt"
+        test -d "$(testProjectPath)"
 
       displayName: 'Verify Function App source files'
 
-    # Step 4: Install dependencies and run unit tests
+    # 4. Authenticate with Azure Artifacts
+    - task: PipAuthenticate@1
+      displayName: 'Authenticate Azure Artifacts Python Feed'
+      inputs:
+        artifactFeeds: '$(artifactFeed)'
+        onlyAddExtraIndex: false
+
+    # 5. Install dependencies and execute unit tests
     - script: |
         set -euo pipefail
 
@@ -79,15 +91,17 @@ stages:
         echo "Pip version:"
         python -m pip --version
 
-        echo "Installing Function App dependencies..."
+        echo "Installing Function App dependencies from Azure Artifacts..."
 
         python -m pip install \
           --disable-pip-version-check \
           --retries 10 \
           --timeout 120 \
-          --no-cache-dir \
           -r "$(functionProjectPath)/requirements.txt" \
           pytest
+
+        echo "Installed Python packages:"
+        python -m pip list
 
         echo "Running unit tests..."
 
@@ -95,8 +109,11 @@ stages:
           python -m pytest -v "$(testProjectPath)/"
 
       displayName: 'Install dependencies and run unit tests'
+      env:
+        PIP_DEFAULT_TIMEOUT: '120'
+        PIP_RETRIES: '10'
 
-    # Step 5: Create ZIP deployment package
+    # 6. Create Function App deployment ZIP
     - task: ArchiveFiles@2
       displayName: 'Create Function App ZIP package'
       inputs:
@@ -106,19 +123,19 @@ stages:
         archiveFile: '$(Build.ArtifactStagingDirectory)/$(zipFileName)'
         replaceExistingArchive: true
 
-    # Step 6: Verify ZIP package
+    # 7. Verify ZIP package
     - script: |
         set -euo pipefail
 
-        echo "Deployment package created:"
+        echo "Deployment ZIP package:"
         ls -lh "$(Build.ArtifactStagingDirectory)/$(zipFileName)"
 
-        echo "Checking ZIP contents:"
+        echo "ZIP contents:"
         unzip -l "$(Build.ArtifactStagingDirectory)/$(zipFileName)"
 
       displayName: 'Verify deployment package'
 
-    # Step 7: Publish pipeline artifact
+    # 8. Publish pipeline artifact
     - task: PublishPipelineArtifact@1
       displayName: 'Publish Function App artifact'
       inputs:
@@ -138,7 +155,6 @@ stages:
   condition: succeeded()
 
   jobs:
-
   - deployment: DeployFunction
     displayName: 'Deploy Python Function App'
 
@@ -149,21 +165,21 @@ stages:
         deploy:
           steps:
 
-          # Step 1: Download build artifact
+          # 1. Download build artifact
           - download: current
             artifact: '$(artifactName)'
 
-          # Step 2: Verify downloaded package
+          # 2. Verify downloaded ZIP
           - script: |
               set -euo pipefail
 
-              echo "Checking downloaded deployment package..."
+              echo "Checking downloaded artifact..."
 
               ls -lh "$(Pipeline.Workspace)/$(artifactName)/$(zipFileName)"
 
             displayName: 'Verify downloaded artifact'
 
-          # Step 3: Deploy to Azure Function App
+          # 3. Deploy Function App to Azure
           - task: AzureCLI@2
             displayName: 'Deploy Function App to Azure'
             inputs:
@@ -173,10 +189,10 @@ stages:
               inlineScript: |
                 set -euo pipefail
 
-                echo "Azure account information:"
+                echo "Connected Azure account:"
                 az account show --output table
 
-                echo "Deploying Azure Function App..."
+                echo "Starting Function App deployment..."
 
                 az functionapp deployment source config-zip \
                   --resource-group "$(functionResourceGroup)" \
@@ -184,11 +200,11 @@ stages:
                   --src "$(Pipeline.Workspace)/$(artifactName)/$(zipFileName)" \
                   --build-remote true
 
-                echo "Deployment command completed."
+                echo "Function App deployment command completed."
 
-          # Step 4: Verify Function App status
+          # 4. Verify Function App
           - task: AzureCLI@2
-            displayName: 'Verify Azure Function App'
+            displayName: 'Verify Function App deployment'
             inputs:
               azureSubscription: '$(azureServiceConnection)'
               scriptType: 'bash'
@@ -196,7 +212,7 @@ stages:
               inlineScript: |
                 set -euo pipefail
 
-                echo "Checking Function App configuration..."
+                echo "Checking Function App details..."
 
                 az functionapp show \
                   --resource-group "$(functionResourceGroup)" \
@@ -204,4 +220,4 @@ stages:
                   --query "{name:name,state:state,hostName:defaultHostName}" \
                   --output table
 
-                echo "Azure Function App verification completed."
+                echo "Deployment verification completed."
