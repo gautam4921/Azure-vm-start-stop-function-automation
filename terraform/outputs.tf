@@ -16,7 +16,7 @@ output "function_app_name" {
 
 output "function_app_resource_group" {
   description = "Resource group containing the Function App"
-  value       = azurerm_resource_group.automation.name
+  value       = azurerm_resource_group.function.name
 }
 
 
