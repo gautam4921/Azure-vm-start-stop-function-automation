@@ -1,12 +1,24 @@
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfplan
-crash.log
-crash.*.log
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
-.terraformrc
-terraform.rc
+@'
+
+# Terraform generated files
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+**/.terraform.tfstate.lock.info
+
+# Local Terraform variables and secrets
+**/terraform.tfvars
+**/*.tfvars
+!**/*.tfvars.example
+
+# Python generated files
+**/__pycache__/
+**/.pytest_cache/
+*.py[cod]
+
+# Environment files
+.env
+.env.*
+!.env.example
+'@ | Add-Content -Path .gitignore
