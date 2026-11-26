@@ -227,3 +227,168 @@ terraform apply destroy.tfplan
 ```
 
 This destroys the VMs and all Terraform-managed resources in both resource groups. Back up anything you need first.
+
+
+
+
+
+Monitor Function executions
+Function App → Application Insights → Logs.
+Run the following queries.
+ Check function executions
+
+ requests
+| where timestamp > ago(24h)
+| summarize
+    TotalExecutions = count(),
+    FailedExecutions = countif(success == false),
+    AverageDuration = avg(duration)
+    by name
+
+ Identify failed executions 
+
+ requests
+| where timestamp > ago(24h)
+| where success == false
+| project timestamp,
+          name,
+          resultCode,
+          duration,
+          operation_Id
+| order by timestamp desc
+
+Identify exceptions
+
+exceptions
+| where timestamp > ago(24h)
+| project timestamp,
+          type,
+          outerMessage,
+          operation_Id
+| order by timestamp desc
+
+Check custom application logs
+
+traces
+| where timestamp > ago(24h)
+| order by timestamp desc
+| project timestamp,
+          message,
+          severityLevel
+
+KQL query – Find HTTP 500 errors:          
+requests
+| where timestamp > ago(24h)
+| where resultCode startswith "5"
+| project timestamp,
+          name,
+          resultCode,
+          duration,
+          operation_Id
+| order by timestamp desc
+
+KQL query – Identify failed HTTP requests:
+
+requests
+| where timestamp > ago(24h)
+| where success == false
+| summarize FailureCount = count()
+    by name, resultCode
+| order by FailureCount desc
+
+
+requests
+| where timestamp > ago(1h)
+| order by timestamp desc
+
+Check exceptions:
+exceptions
+| where timestamp > ago(1h)
+| order by timestamp desc
+
+Check custom logs:
+traces
+| where timestamp > ago(1h)
+| order by timestamp desc
+
+
+## How do you check Function App memory and execution duration?
+I use Azure Monitor Metrics and Application Insights.
+A. Check execution duration
+In the Azure Portal:
+1. Open Function App.
+2. Select Application Insights.
+3. Open Performance or Logs.
+4. Review the execution duration and identify slow functions.
+
+KQL query:
+requests
+| where timestamp > ago(24h)
+| summarize
+    TotalExecutions = count(),
+    AverageDuration = avg(duration),
+    MaximumDuration = max(duration)
+    by name
+| order by AverageDuration desc
+
+## How do you troubleshoot a Function App returning HTTP 500?
+Useful Application Insights query:
+requests
+| where timestamp > ago(24h)
+| where resultCode startswith "5"
+| project timestamp, name, resultCode,
+          duration, operation_Id
+| order by timestamp desc
+
+Find related exceptions:
+
+exceptions
+| where timestamp > ago(24h)
+| project timestamp, type, outerMessage,
+          operation_Id
+| order by timestamp desc
+
+
+## How do you check Function App logs?
+Live log streaming
+Azure Portal → Function App → Monitoring → Log stream. Use in cli 
+az functionapp log tail \
+  --resource-group rg-vm-automation \
+  --name <function-app-name>
+
+Application Insights KQL  
+traces
+| where timestamp > ago(24h)
+| order by timestamp desc
+
+## How do you check failed executions?
+I generally use three methods.
+
+Method 1: Azure Portal
+1. Open Function App.
+2. Select the function.
+3. Open Monitor.
+4. Review execution history.
+5. Select a failed execution to inspect its details.
+
+Method 2: Application Insights
+
+Navigate to Application Insights → Logs.
+
+Example KQL query:
+requests
+| where success == false
+| order by timestamp desc
+| project timestamp, name, resultCode, duration, operation_Id
+
+For exceptions:
+exceptions
+| order by timestamp desc
+| project timestamp, type, outerMessage, operation_Id
+
+For function traces:
+
+traces
+| where severityLevel >= 3
+| order by timestamp desc
+| project timestamp, message, severityLevel, operation_Id
