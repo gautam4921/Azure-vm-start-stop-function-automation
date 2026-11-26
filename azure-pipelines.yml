@@ -15,7 +15,8 @@ variables:
 
   # Azure resources
   functionResourceGroup: 'rg-vm-automation'
-  functionAppName: '#######'
+  functionAppName: 'func-vm-auto-i3mo0bv'
+  '
   # Change the Azure Function App name after terraform deployment
   
 
