@@ -16,9 +16,6 @@ variables:
   # Azure resources
   functionResourceGroup: 'rg-vm-automation'
   functionAppName: 'func-vm-auto-i3mo0bv'
-  
-  # Change the Azure Function App name after terraform deployment
-  
 
   # Azure Artifacts feed
   artifactFeed: 'Azure-vm-start-stop-automation/python-packages'
@@ -47,7 +44,7 @@ stages:
 
     steps:
 
-    # 1. Checkout GitHub repository
+    # 1. Checkout repository
     - checkout: self
       clean: true
 
@@ -72,8 +69,11 @@ stages:
 
         test -f "$(functionProjectPath)/host.json"
         test -f "$(functionProjectPath)/function_app.py"
+        test -f "$(functionProjectPath)/vm_policy.py"
         test -f "$(functionProjectPath)/requirements.txt"
         test -d "$(testProjectPath)"
+
+        echo "Repository structure verified successfully."
 
       displayName: 'Verify Function App source files'
 
@@ -94,7 +94,7 @@ stages:
         echo "Pip version:"
         python -m pip --version
 
-        echo "Installing Function App dependencies from Azure Artifacts..."
+        echo "Installing Function App dependencies..."
 
         python -m pip install \
           --disable-pip-version-check \
@@ -106,12 +106,15 @@ stages:
         echo "Installed Python packages:"
         python -m pip list
 
-        echo "Running unit tests..."
+        echo "Running VM policy unit tests..."
 
         PYTHONPATH="$(functionProjectPath)" \
           python -m pytest -v "$(testProjectPath)/"
 
+        echo "All unit tests completed successfully."
+
       displayName: 'Install dependencies and run unit tests'
+
       env:
         PIP_DEFAULT_TIMEOUT: '120'
         PIP_RETRIES: '10'

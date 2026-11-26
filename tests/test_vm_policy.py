@@ -1,28 +1,108 @@
-import os
-from types import SimpleNamespace
-
-import pytest
 
 from function_app import eligible
 
-@pytest.fixture(autouse=True)
-def settings(monkeypatch):
-    monkeypatch.setenv("TARGET_ENVIRONMENT", "dev")
-    monkeypatch.delenv("ALLOW_PROD_AUTOMATION", raising=False)
 
-def test_eligible_dev_vm():
-    vm = SimpleNamespace(tags={"Environment": "Dev", "AutoSchedule": "true"})
-    assert eligible(vm)
+def test_dev_vm_is_eligible():
 
-def test_other_environment_is_skipped():
-    vm = SimpleNamespace(tags={"Environment": "QA", "AutoSchedule": "true"})
-    assert not eligible(vm)
+    vm = {
+        "name": "vm-dev-01",
+        "tags": {
+            "Environment": "dev",
+            "AutoSchedule": "true"
+        }
+    }
 
-def test_untagged_vm_is_skipped():
-    vm = SimpleNamespace(tags=None)
-    assert not eligible(vm)
+    assert eligible(vm) is True
 
-def test_prod_requires_explicit_flag(monkeypatch):
-    monkeypatch.setenv("TARGET_ENVIRONMENT", "prod")
-    vm = SimpleNamespace(tags={"Environment": "Prod", "AutoSchedule": "true"})
-    assert not eligible(vm)
+
+def test_dev_vm_with_uppercase_tag_values():
+
+    vm = {
+        "name": "vm-dev-02",
+        "tags": {
+            "Environment": "DEV",
+            "AutoSchedule": "TRUE"
+        }
+    }
+
+    assert eligible(vm) is True
+
+
+def test_vm_without_autoschedule_tag():
+
+    vm = {
+        "name": "vm-dev-03",
+        "tags": {
+            "Environment": "dev"
+        }
+    }
+
+    assert eligible(vm) is False
+
+
+def test_vm_autoschedule_false():
+
+    vm = {
+        "name": "vm-dev-04",
+        "tags": {
+            "Environment": "dev",
+            "AutoSchedule": "false"
+        }
+    }
+
+    assert eligible(vm) is False
+
+
+def test_prod_vm_is_not_eligible_by_default():
+
+    vm = {
+        "name": "vm-prod-01",
+        "tags": {
+            "Environment": "prod",
+            "AutoSchedule": "true"
+        }
+    }
+
+    assert eligible(vm) is False
+
+
+def test_prod_vm_can_be_enabled_explicitly():
+
+    vm = {
+        "name": "vm-prod-02",
+        "tags": {
+            "Environment": "prod",
+            "AutoSchedule": "true"
+        }
+    }
+
+    assert eligible(vm, allow_prod=True) is True
+
+
+def test_qa_vm_is_not_eligible():
+
+    vm = {
+        "name": "vm-qa-01",
+        "tags": {
+            "Environment": "qa",
+            "AutoSchedule": "true"
+        }
+    }
+
+    assert eligible(vm) is False
+
+
+def test_vm_without_tags():
+
+    vm = {
+        "name": "vm-dev-05",
+        "tags": None
+    }
+
+    assert eligible(vm) is False
+
+
+def test_empty_vm():
+
+    assert eligible(None) is False
+

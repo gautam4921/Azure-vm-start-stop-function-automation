@@ -1,176 +1,218 @@
 
-import os
 import logging
-import azure.functions as func
+import os
 
+import azure.functions as func
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
 
+from vm_policy import eligible
+
+
+# Azure Functions application
 app = func.FunctionApp()
 
-# Read configuration from Function App environment variables
-SUBSCRIPTION_ID = os.getenv("AZURE_SUBSCRIPTION_ID")
 
-RESOURCE_GROUP = os.getenv("TARGET_RESOURCE_GROUP")
-
-DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"
-
-
-def process_vms(action: str):
+def get_required_setting(name):
     """
-    Start or deallocate all VMs tagged AutoSchedule=true.
+    Read required configuration at runtime.
+    Do not access Azure configuration during module import.
+    """
+    value = os.getenv(name)
+
+    if not value:
+        raise ValueError(
+            f"Required application setting is missing: {name}"
+        )
+
+    return value
+
+
+def get_bool_setting(name, default=False):
+    value = os.getenv(name)
+
+    if value is None:
+        return default
+
+    return value.strip().lower() == "true"
+
+
+def get_compute_client():
+    """
+    Authenticate using the Function App's Managed Identity.
     """
 
-    logging.info("Requested action: %s", action)
-    logging.info("Resource group: %s", RESOURCE_GROUP)
-    logging.info("Dry run mode: %s", DRY_RUN)
-
-    # Authenticate using the Function App Managed Identity
-    credential = DefaultAzureCredential()
-
-    compute_client = ComputeManagementClient(
-        credential=credential,
-        subscription_id=SUBSCRIPTION_ID
+    subscription_id = get_required_setting(
+        "AZURE_SUBSCRIPTION_ID"
     )
 
-    failures = []
+    credential = DefaultAzureCredential()
 
-    try:
-        # Get VMs from the target resource group
-        vms = compute_client.virtual_machines.list(
-            RESOURCE_GROUP
-        )
+    return ComputeManagementClient(
+        credential,
+        subscription_id
+    )
 
-        for vm in vms:
 
-            # Only process VMs with AutoSchedule=true
-            tags = vm.tags or {}
+def process_vms(action):
+    """
+    Process eligible VMs.
 
-            if tags.get("AutoSchedule", "").lower() != "true":
-                logging.info(
-                    "Skipping VM %s: AutoSchedule tag is not true",
-                    vm.name
-                )
-                continue
+    action = start or deallocate
+    """
 
-            vm_name = vm.name
+    resource_group = get_required_setting(
+        "TARGET_RESOURCE_GROUP"
+    )
 
-            try:
-                # Check the current VM power state
-                instance_view = (
-                    compute_client.virtual_machines.instance_view(
-                        RESOURCE_GROUP,
-                        vm_name
-                    )
-                )
+    dry_run = get_bool_setting(
+        "DRY_RUN",
+        default=True
+    )
 
-                power_state = "unknown"
+    allow_prod = get_bool_setting(
+        "ALLOW_PROD_AUTOMATION",
+        default=False
+    )
 
-                for status in instance_view.statuses or []:
-                    if status.code.startswith("PowerState/"):
-                        power_state = status.code.split("/", 1)[1].lower()
-                        break
+    logging.info(
+        "VM automation started. Action=%s, ResourceGroup=%s, "
+        "DryRun=%s, AllowProd=%s",
+        action,
+        resource_group,
+        dry_run,
+        allow_prod
+    )
 
-                logging.info(
-                    "VM: %s | Current state: %s",
-                    vm_name,
-                    power_state
-                )
+    compute_client = get_compute_client()
 
-                if action == "start":
+    vms = compute_client.virtual_machines.list(
+        resource_group_name=resource_group
+    )
 
-                    if power_state == "running":
-                        logging.info(
-                            "VM %s is already running. Skipping.",
-                            vm_name
-                        )
-                        continue
+    processed = 0
 
-                    if power_state not in ("deallocated", "stopped"):
-                        logging.warning(
-                            "VM %s is in state %s. Skipping start.",
-                            vm_name,
-                            power_state
-                        )
-                        continue
+    for vm in vms:
 
-                    if DRY_RUN:
-                        logging.info(
-                            "[DRY RUN] Would start VM: %s",
-                            vm_name
-                        )
-                    else:
-                        logging.info("Starting VM: %s", vm_name)
+        vm_name = vm.name
 
-                        compute_client.virtual_machines.begin_start(
-                            RESOURCE_GROUP,
-                            vm_name
-                        ).result()
-
-                        logging.info(
-                            "VM %s started successfully.",
-                            vm_name
-                        )
-
-                elif action == "deallocate":
-
-                    if power_state == "deallocated":
-                        logging.info(
-                            "VM %s is already deallocated. Skipping.",
-                            vm_name
-                        )
-                        continue
-
-                    if power_state not in ("running", "stopped"):
-                        logging.warning(
-                            "VM %s is in state %s. Skipping deallocation.",
-                            vm_name,
-                            power_state
-                        )
-                        continue
-
-                    if DRY_RUN:
-                        logging.info(
-                            "[DRY RUN] Would deallocate VM: %s",
-                            vm_name
-                        )
-                    else:
-                        logging.info("Deallocating VM: %s", vm_name)
-
-                        compute_client.virtual_machines.begin_deallocate(
-                            RESOURCE_GROUP,
-                            vm_name
-                        ).result()
-
-                        logging.info(
-                            "VM %s deallocated successfully.",
-                            vm_name
-                        )
-
-                else:
-                    raise ValueError(
-                        f"Unsupported VM action: {action}"
-                    )
-
-            except Exception:
-                logging.exception(
-                    "Failed to process VM: %s",
-                    vm_name
-                )
-                failures.append(vm_name)
-
-        if failures:
-            raise RuntimeError(
-                f"VM operation failed for: {', '.join(failures)}"
+        if not eligible(vm, allow_prod=allow_prod):
+            logging.info(
+                "Skipping VM %s because it is not eligible.",
+                vm_name
             )
+            continue
 
         logging.info(
-            "VM %s operation completed.",
-            action
+            "Eligible VM identified: %s",
+            vm_name
         )
 
-    finally:
-        credential.close()
+        if dry_run:
+            logging.info(
+                "[DRY RUN] Would %s VM: %s",
+                action,
+                vm_name
+            )
+            continue
+
+        try:
+
+            if action == "start":
+
+                logging.info(
+                    "Starting VM: %s",
+                    vm_name
+                )
+
+                poller = compute_client.virtual_machines.begin_start(
+                    resource_group_name=resource_group,
+                    vm_name=vm_name
+                )
+
+            elif action == "deallocate":
+
+                logging.info(
+                    "Deallocating VM: %s",
+                    vm_name
+                )
+
+                poller = compute_client.virtual_machines.begin_deallocate(
+                    resource_group_name=resource_group,
+                    vm_name=vm_name
+                )
+
+            else:
+                raise ValueError(
+                    f"Unsupported VM action: {action}"
+                )
+
+            # Wait for Azure operation to finish.
+            poller.result()
+
+            processed += 1
+
+            logging.info(
+                "Successfully completed %s operation for VM %s",
+                action,
+                vm_name
+            )
+
+        except Exception:
+            logging.exception(
+                "Failed to %s VM: %s",
+                action,
+                vm_name
+            )
+
+    logging.info(
+        "VM automation completed. Successfully processed VMs: %s",
+        processed
+    )
+
+
+# ==========================================================
+# TIMER 1: START VMs
+# ==========================================================
+
+@app.timer_trigger(
+    schedule="%VM_START_SCHEDULE%",
+    arg_name="mytimer",
+    run_on_startup=False,
+    use_monitor=True
+)
+def start_vms(mytimer: func.TimerRequest):
+
+    if mytimer.past_due:
+        logging.warning(
+            "VM start timer is running late."
+        )
+
+    logging.info("Starting scheduled VM start operation.")
+
+    process_vms("start")
+
+
+# ==========================================================
+# TIMER 2: DEALLOCATE VMs
+# ==========================================================
+
+@app.timer_trigger(
+    schedule="%VM_DEALLOCATE_SCHEDULE%",
+    arg_name="mytimer",
+    run_on_startup=False,
+    use_monitor=True
+)
+def deallocate_vms(mytimer: func.TimerRequest):
+
+    if mytimer.past_due:
+        logging.warning(
+            "VM deallocation timer is running late."
+        )
+
+    logging.info("Starting scheduled VM deallocation operation.")
+
+    process_vms("deallocate")
 
 
 # Timer Trigger: Start VMs at 8 AM IST (02:30 UTC)

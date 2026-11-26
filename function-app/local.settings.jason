@@ -1,0 +1,17 @@
+
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+
+    "AZURE_SUBSCRIPTION_ID": "YOUR_SUBSCRIPTION_ID",
+    "TARGET_RESOURCE_GROUP": "rg-vm-automation-target",
+
+    "VM_START_SCHEDULE": "0 30 2 * * *",
+    "VM_DEALLOCATE_SCHEDULE": "0 30 14 * * *",
+
+    "DRY_RUN": "true",
+    "ALLOW_PROD_AUTOMATION": "false"
+  }
+}
