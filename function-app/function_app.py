@@ -9,8 +9,9 @@ from azure.mgmt.compute import ComputeManagementClient
 app = func.FunctionApp()
 
 # Read configuration from Function App environment variables
-SUBSCRIPTION_ID = os.environ["AZURE_SUBSCRIPTION_ID"]
-RESOURCE_GROUP = os.environ["TARGET_RESOURCE_GROUP"]
+SUBSCRIPTION_ID = os.getenv("AZURE_SUBSCRIPTION_ID")
+
+RESOURCE_GROUP = os.getenv("TARGET_RESOURCE_GROUP")
 
 DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"
 
