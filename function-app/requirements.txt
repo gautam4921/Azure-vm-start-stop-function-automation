@@ -1,3 +1,4 @@
 azure-functions>=1.20,<2
 azure-identity>=1.17,<2
 azure-mgmt-compute>=34,<36
+# AutoSchedule=true
