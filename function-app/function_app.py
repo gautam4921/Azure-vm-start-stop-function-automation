@@ -96,3 +96,21 @@ def deallocate_vms(timer: func.TimerRequest) -> None:
     if timer.past_due:
         logging.warning("Deallocate timer is past due.")
     run_vm_action("deallocate")
+
+# Additional HTTP health-check endpoint
+@app.route(route="health", methods=["GET"])
+def health_check(req: func.HttpRequest) -> func.HttpResponse:
+
+    logging.info("Health check request received")
+
+    try:
+        logging.info("Function executed successfully")
+
+        return func.HttpResponse(
+            "Function App is healthy",
+            status_code=200
+        )
+
+    except Exception:
+        logging.exception("Health check failed")
+        raise
